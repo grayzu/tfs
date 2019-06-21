@@ -1,6 +1,6 @@
 # tfs
 
-Work in progress (WIP) repo for project code name *ideal-potato*. Contains Terraform doc articles and sample configurations.
+Work in progress (WIP) repo for Project *ideal-potato*. Contains Terraform doc articles and sample configurations.
 
 Topics:
 * managed identity, rbac, policies
