@@ -1,34 +1,9 @@
 /*********************************************************************
-    Secrets tutorial setup configuration
+Secrets tutorial setup configuration
 
-    Version 0.10.2, 04/12/19, v-glmin
+Version 0.10.2, 04/12/19, v-glmin
 
-    This configuration creates the prerequisite infrastructure needed for the   Terraform secrets tutorial. It will create the following Azure resources:
-
-    * Resource group
-    * Key vault
-    * Storage accounts for Terraform state and for boot diagnostics
-    * A blob container for state
-    * Vnet, subnet, nic, nsg, public IP
-    * Linux virtual machine with managed identity
-    * RBAC role assignments for the key vault and backend storage to enable the virtual machine identity to access those resources
-    * An ssh key pair
-    * Several new secrets stored in the vault: admin username, ssh key passphrase, and ssh private key
-
-    Among other things, this configuration demonstrates:
-
-    * How to use a managed identity to access Azure resources without storing secrets locally
-    * Finding the virtual machine's service principal objectID, called the principal_id in Terraform.
-    * Using RBAC role assignments
-    * The Random, Null, and Local providers
-    * Using a module to package ssh key generation
-    * Using null_resource to wrap a provisioner
-    * Local_file and local_exec provisioners
-    * Creating explicit resource dependencies with depends_on=[]
-
-    This configuration assumes that Terraform is running in Azure Cloud Shell [recommended], or on a VM that has a managed identity configured, using BASH or similar shell on Linux. If neither case applies, you will need to modify this configuration to authenticate using a service principal or through the AZ CLI. For more information, see https://www.terraform.io/docs/providers/azurerm/auth/service_principal_client_secret.html. 
-
-    IMPORTANT: The secrets created in this configuration will be saved to Terraform state in plain text. You can view the state using 'terraform show' to see what secrets were saved, and how they appear in the state.
+This configuration creates the prerequisite infrastructure needed for the   Terraform secrets tutorial. It will create the following Azure resources:
 
 ***********************************************************************/
  
