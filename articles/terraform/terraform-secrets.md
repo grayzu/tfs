@@ -4,106 +4,87 @@ description:
 author: <github account>
 ms.author: tarcher
 ms.service: terraform
-ms.topic: tutorial
+ms.topic: 
 ms.custom: mvc
 ms.date: 06/20/2019
-
 ---
 
-# Tutorial: Manage secrets in Terraform on Azure
+<!-- items in bold text marked with ! are notes to self, comments that will be removed but I want them visible in the text for now. I used to use a hash mark as a todo tag, but that tends to confuse the markdown linter even when embedded in a comment block -->
 
-<!-- What are secrets? A few examples, out of many possibilities:
-- Terraform state 
-- Security principal id and password
-- Certificates
-- Storage access keys
-- SSH private key and password
-- Configuration details for network rules and endpoints
-- URLs -->
+# How to manage secrets in Terraform on Azure
 
+**! intro is far from complete, might save until last**
 
-This walkthrough is oriented towards using Terraform in automation, such as a CI/CD pipeline. The sample configuration relies on Azure Managed Identity to reduce the amount of sensitive information exposed to the host environment. 
+- What are secrets in Terraform? Any information you don't want to be compromised. A few examples:
+    - Terraform state
+    - Storage access keys
+    - SSH private key and password
+    - Configuration details for network rules and endpoints
 
-Typically, secrets are passed to Terraform by several methods:
-* Through environment variables set in the host environment. 
-* Using tfvars.tvar files
-* Terraform CLI command line 
+- Three main topics:
+    - managed identity, rbac, access policies
+    - remote backend state
+    - exposing secrets to the environment (how not to)
+        - environment variables -- for example, something like this is commonly used: 
+            ```bash
+            $ export ARM_CLIENT_ID="00000000-0000-0000-0000-000000000000"
+            $ export ARM_CLIENT_SECRET="00000000-0000-0000-0000-000000000000"
+            $ export ARM_SUBSCRIPTION_ID="00000000-0000-0000-0000-000000000000"
+            $ export ARM_TENANT_ID="00000000-0000-0000-0000-000000000000"
+            ```
+            ARM_SUBSCRIPTION_ID and ARM_TENANT_ID are not sensitive, but ARM_CLIENT_ID and ARM_CLIENT_SECRET are the equivalent of username and password for the Azure account.
 
-Long running pipeline, repeatedly calls Terraform stage but perhaps over a period of days or weeks, during which Terraform is evoked on a new instance each time. Need to store all necessary info in secure central storage, be self contained without the need to persist secrets in the pipeline
+            **! look at the .sh scripts for docker tf test for an example, then rewrite to avoid use of env vars**
 
+        - shell commands that might be logged e.g., `terraform apply -var *double-secret-storage-access-key*`
+        - terraform.tfvars, *.auto.tfvars
 
-The sample configuration and walkthrough show you how to:
+## Managed identity, RBAC, and access policies
 
-> [!div class="checklist"]
-> * Configure Terraform and Providers to use msi
-> * Find the virtual machine service principal objectID, called the principal_id in Terraform.
-> * RBAC role assignments
-> * Use the Random, Null, and Local providers 
-> * Use Local_file and local_exec provisioners to interact with the host environment
-> * Using null_resource to wrap a provisioner
-> * Enforce resource dependencies with depends_on=[]
-> * Use Key Vault to manage ssh keys
-> * Save state on Azure Storage
+* Managed identity is supported for Azure VM, AKS, and Azure Cloud Shell. Etc. **!Link to msi docs here**
 
-<!-- outline 
+* Important takeaway: AAD creates an account and service principal, but does not assign roles to the sp. The new vm/container can't do anything until RBAC is configured.
 
-- make modifications to the existing sample, Break it into two:
+* Initially, if you try to login with the managed identity before configuring RBAC and policies, you'll get a message like this:
 
-Part 1, creates kv, storage
-Part 2, creates a vm and secrets
+    ```azurecli-interactive
+    Gamera@terrapin:~$ az login --identity
+    No access was configured for the VM, hence no subscriptions were found
+    ```
 
-Overall flow:
+* You have to configure a role, and usually an access policy, on every Azure service the TF scripts need to access. At minimum, the tf identity needs Contributor on ARM, and an access policy configured on one or more storage accounts or blob containers.
 
-Assume reader is using cloud shell; it simplifies the setup and instructions. 
+* Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the Owner role, because Owner can do nearly anything in the subscription -- and that's the problem. A subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Follow the principal of least privilege when assigning roles. In most cases, it is enough to assign the *Contributor* and *User Access Administrator* roles to the service principal.
 
-1. download the sample configs from azure-devops/terraform-secrets
-2. apply part 1 config
-3. Decide how to deal with remote backend config. Couple of ways to do it here, which one provides greatest enlightenment?
-4. apply part 2 config
-5. retrieve the secrets and SSH to the VM
+[side note, how does Jenkins handle managed identity?]
+* With the managed identity configured, tf needs two additional IDs before it can work with Azure infrastructure: subscriptionID and tenantID. [Need to check, don't think they are needed just to set up remote state, only for infrastructure plan or change]
 
--->
+## Remote backend state
 
+* Terraform saves most secrets in plain text, readable by anyone with access to the state folder and files. State also contains sensitive configuration details, such as open ports, network rules, etc.
+* It is common to access a given configuration state from more than one location. For example, a long-running pipeline may execute on more than one VM or container over a period of weeks. Each time Terraform is run it is configured to use state from the last iteration, if it exists.
+* You have to enable remote state on every tf project. There is no global setting, per se, to enable remote state. [reference **TF_CLI_ARGS_name** here]
+* When tf init is run, the backend is initialized. 
+* You can override the default environment setting and control backend initialization as described in [terraform init](https://www.terraform.io/docs/commands/init.html#backend-initialization). 
 
+## Sample Terraform configuration
+This article includes a companion Terraform script. The script demonstrates how to: 
 
-## Prerequisites
+* Configure Terraform and Providers to use managed identity for Azure resources
+* Use Azure Key Vault to manage ssh keys
+* Save remote backend state on Azure Storage
+* Find the virtual machine service principal *objectID*, also known as the *principal_id* in Terraform.
+* Create RBAC role assignments
+* Use the *Random*, *Null*, and *Local* providers 
+* Use *Local_file* and *local_exec* provisioners to interact with the host environment
+* Use *null_resource* to wrap a provisioner so that you can run the provisioner without creating or destroying infrastructure.
+* Enforce resource dependencies with *depends_on=[]*.
 
- * An Azure subscription. If you don't have an Azure subscription, create a [free account](https://azure.microsoft.com/free/?WT.mc_id=A261C142F) before you begin.
- * *Owner* or *Contributor* and *User Access Administrator* roles in your Azure subscription. These roles are needed to create a managed identity and RBAC role assigment.
+1. Download the configuration from **! link to repo**
+2. Change the values in `variables.tf` as needed 
+3. Apply the configuration, fix issues, reapply, fix, repeat until it works. Don't forget that when a terraform configuration is aborted due to errors, Azure infrastructure that was created before the errors is left in an unknown state. Because TF is not idempotent, you need to run `terraform destroy` after every failed sortie so that you have a clean start on the next iteration. 
 
-
-## Install the sample Terraform configuration
-
-The sample configurations create the following Azure resources:
-
-<!-- part 1 -->
-* Resource group
-* Key Vault and access policy
-* Azure Storage account for Terraform state
-* A blob container and access policy for Terraform state 
-
-<!-- part 2 -->
-
-* Storage account for boot diagnostics
-* Vnet, subnet, nic, nsg, public IP
-* A new Linux virtual machine with managed identity
-* A unique ssh private key and password for every new virtual machine
-* RBAC role assignments for the key vault and backend storage to enable the virtual machine identity to access those resources
-* Several new secrets stored in the vault: admin username, ssh key passphrase, and ssh private key
-
-
-## Procedure 3
-
-
-
-## Clean up resources
-
-If you're not going to continue to use this application, delete
-<resources> with the following steps:
-
-1. From the left-hand menu...
-2. ...click Delete, type...and then click Delete
-
+**Challenge exercise**: If you are experimentally minded, troubleshooting the sample configuration is a good opportunity to try out the [terraform taint](https://www.terraform.io/docs/commands/taint.html) command in a situation where you can do no harm. Using `terraform taint`, you can selectively taint resources to roll the configuration back to a known good point, which will depend on how far the configuration got before terminating. 
 
 ## Next steps
 
