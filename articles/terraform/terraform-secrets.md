@@ -13,8 +13,6 @@ ms.date: 06/20/2019
 
 # How to manage secrets in Terraform on Azure
 
-**! intro is far from complete, might save until last**
-
 - What are secrets in Terraform? Any information you don't want to be compromised. A few examples:
     - Terraform state
     - Storage access keys
@@ -52,7 +50,7 @@ ms.date: 06/20/2019
     No access was configured for the VM, hence no subscriptions were found
     ```
 
-* You have to configure a role, and usually an access policy, on every Azure service the TF scripts need to access. At minimum, the tf identity needs Contributor on ARM, and an access policy configured on one or more storage accounts or blob containers.
+* You have to configure a role, and usually an access policy, on every Azure service the TF scripts need to access. At minimum, the tf identity needs Contributor on ARM, and an access policy configured on one or more storage accounts or blob containers. !Provide an overview of how to do this.
 
 * Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the Owner role, because Owner can do nearly anything in the subscription -- and that's the problem. A subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Follow the principal of least privilege when assigning roles. In most cases, it is enough to assign the *Contributor* and *User Access Administrator* roles to the service principal.
 
@@ -66,6 +64,8 @@ ms.date: 06/20/2019
 * You have to enable remote state on every tf project. There is no global setting, per se, to enable remote state. [reference **TF_CLI_ARGS_name** here]
 * When tf init is run, the backend is initialized. 
 * You can override the default environment setting and control backend initialization as described in [terraform init](https://www.terraform.io/docs/commands/init.html#backend-initialization). 
+* Show examples of backend configurations
+
 
 ## Sample Terraform configuration
 This article includes a companion Terraform script. The script demonstrates how to: 
