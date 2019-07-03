@@ -9,15 +9,20 @@ ms.custom: mvc
 ms.date: 06/20/2019
 ---
 
-<!-- items in bold text marked with ! are notes to self, comments that will be removed but I want them visible in the text for now. I used to use a hash mark as a todo tag, but that tends to confuse the markdown linter even when embedded in a comment block -->
-
 # How to manage secrets in Terraform on Azure
 
-- What are secrets in Terraform? Any information you don't want to be compromised. A few examples:
-    - Terraform state
-    - Storage access keys
-    - SSH private key and password
-    - Configuration details for network rules and endpoints
+ When you use Terraform to manage infrastructure as code (IaC), you work with many *secrets*. A secret is any information you don't want to be compromised. A few examples:
+
+* *Client secret*, the password for a security principal or user account that can create, modify, or delete infrastructure in Azure
+* Terraform [state](https://www.terraform.io/docs/state/), which contains secrets such as client secret, passwords and access keys in plain text
+* SSH private key and password; for more information about the need for robust SSH key management, see this [NIST paper](https://nvlpubs.nist.gov/nistpubs/ir/2015/NIST.IR.7966.pdf)
+* Configuration details for network rules and endpoints: open ports, allowable source IP address range, etc.
+
+Some secrets are generated before Terraform runs. Other secrets are created by Terraform, such as Terraform state. If Terraform is configured to use a security principal with the **Owner** role, Terraform can be used to elevate the role of an existing credential. Terraform can create new credentials and assign roles to them. An individual with unfettered access to a Terraform installation, state, and credentials essentially has the keys to your Azure infrastructure kingdom unless you take steps to constrain access in accordance with the principle of least privilege. 
+
+Until the introduction of [managed identities for Azure resources](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/) it was essentially impossible to avoid exposing secrets to developers and operators. Now it is possible to work with managed Azure resources without exposing credentials at all. This article describes methods for protecting secrets in Terraform, with an emphasis on running Terraform in automation.
+
+
 
 - Three main topics:
     - managed identity, rbac, access policies
@@ -39,9 +44,12 @@ ms.date: 06/20/2019
 
 ## Managed identity, RBAC, and access policies
 
-* Managed identity is supported for Azure VM, AKS, and Azure Cloud Shell. Etc. **!Link to msi docs here**
+* Managed identity is supported for Azure VM, AKS, and Azure Cloud Shell. Etc.
+* feature name: "managed identities for Azure resources," part of Azure Active Directory. "MSI" is no longer used - probably too limiting, the feature has expanded beyond services
+* Docs landing page: https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/
 
-* Important takeaway: AAD creates an account and service principal, but does not assign roles to the sp. The new vm/container can't do anything until RBAC is configured.
+
+* Important takeaway: AAD creates an account and service principal, but does not assign roles to the sp. The new vm/container can't do anything until RBAC is configured. Quickstart overview: https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/tutorial-linux-vm-access-arm
 
 * Initially, if you try to login with the managed identity before configuring RBAC and policies, you'll get a message like this:
 
@@ -54,7 +62,6 @@ ms.date: 06/20/2019
 
 * Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the Owner role, because Owner can do nearly anything in the subscription -- and that's the problem. A subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Follow the principal of least privilege when assigning roles. In most cases, it is enough to assign the *Contributor* and *User Access Administrator* roles to the service principal.
 
-[side note, how does Jenkins handle managed identity?]
 * With the managed identity configured, tf needs two additional IDs before it can work with Azure infrastructure: subscriptionID and tenantID. [Need to check, don't think they are needed just to set up remote state, only for infrastructure plan or change]
 
 ## Remote backend state
