@@ -11,36 +11,22 @@ ms.date: 06/20/2019
 
 # How to manage secrets in Terraform on Azure
 
- When you use Terraform to manage infrastructure as code (IaC), you work with many *secrets*. A secret is any information you don't want to be compromised. A few examples:
+ When you use Terraform to manage [infrastructure as code](https://docs.microsoft.com/azure/devops/learn/what-is-infrastructure-as-code) (IaC), you work with many *secrets*. A secret is any information you don't want to be compromised. A few common examples:
 
-* *Client secret*, the password for a security principal or user account that can create, modify, or delete infrastructure in Azure
-* Terraform [state](https://www.terraform.io/docs/state/), which contains secrets such as client secret, passwords and access keys in plain text
-* SSH private key and password; for more information about the need for robust SSH key management, see this [NIST paper](https://nvlpubs.nist.gov/nistpubs/ir/2015/NIST.IR.7966.pdf)
+* *Client secret*, the password for a security principal or user account that can create, modify, or delete infrastructure in Azure.
+* Terraform [state](https://www.terraform.io/docs/state/), which contains secrets such as client secret, passwords and access keys in plain text.
+* SSH private key and password; for more information about the need for robust SSH key management, see this [NIST paper](https://nvlpubs.nist.gov/nistpubs/ir/2015/NIST.IR.7966.pdf).
 * Configuration details for network rules and endpoints: open ports, allowable source IP address range, etc.
 
 Some secrets are generated before Terraform runs. Other secrets are created by Terraform, such as Terraform state. If Terraform is configured to use a security principal with the **Owner** role, Terraform can be used to elevate the role of an existing credential. Terraform can create new credentials and assign roles to them. An individual with unfettered access to a Terraform installation, state, and credentials essentially has the keys to your Azure infrastructure kingdom unless you take steps to constrain access in accordance with the principle of least privilege. 
 
 Until the introduction of [managed identities for Azure resources](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/) it was essentially impossible to avoid exposing secrets to developers and operators. Now it is possible to work with managed Azure resources without exposing credentials at all. This article describes methods for protecting secrets in Terraform, with an emphasis on running Terraform in automation.
 
+We will cover three main topics:
 
-
-- Three main topics:
-    - managed identity, rbac, access policies
-    - remote backend state
-    - exposing secrets to the environment (how not to)
-        - environment variables -- for example, something like this is commonly used: 
-            ```bash
-            $ export ARM_CLIENT_ID="00000000-0000-0000-0000-000000000000"
-            $ export ARM_CLIENT_SECRET="00000000-0000-0000-0000-000000000000"
-            $ export ARM_SUBSCRIPTION_ID="00000000-0000-0000-0000-000000000000"
-            $ export ARM_TENANT_ID="00000000-0000-0000-0000-000000000000"
-            ```
-            ARM_SUBSCRIPTION_ID and ARM_TENANT_ID are not sensitive, but ARM_CLIENT_ID and ARM_CLIENT_SECRET are the equivalent of username and password for the Azure account.
-
-            **! look at the .sh scripts for docker tf test for an example, then rewrite to avoid use of env vars**
-
-        - shell commands that might be logged e.g., `terraform apply -var *double-secret-storage-access-key*`
-        - terraform.tfvars, *.auto.tfvars
+* Managed identity for Azure resources, RBAC, and access policies
+* Configuring and using [remote state](https://www.terraform.io/docs/state/remote.html) with the [azurerm](https://www.terraform.io/docs/backends/types/azurerm.html) [backend](https://www.terraform.io/docs/backends/index.html) <!-- need to move these links to be inline with the associated text below -->
+* Concealing secrets from the execution environment
 
 ## Managed identity, RBAC, and access policies
 
