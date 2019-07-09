@@ -11,9 +11,9 @@ ms.date: 07/08/2019
 
 # How to manage secrets in Terraform on Azure
 
-A *secret* is any information you don't want to compromise, such as security credentials, connection strings, network configuration details, and much more. It's impossible to work with Terraform on Azure without using secrets. Often, a Terraform configuration will create new secrets. Protecting secrets while still making them available to authorized users for automation and collaboration is a real challenge. This article offers guidance about how to keep a secret with Terraform and the [Terraform Azure Provider](https://www.terraform.io/docs/providers/azurerm/).
+A *secret* is any information you don't want to compromise, such as security credentials, connection strings, network configuration details, and much more. It's impossible to work with Terraform on Azure without using secrets. Often, a Terraform configuration creates new secrets. Protecting secrets while still making them available to authorized users for automation and collaboration is a real challenge. This article offers guidance about how to keep a secret with Terraform and the [Terraform Azure Provider](https://www.terraform.io/docs/providers/azurerm/).
 
-Before we can devise a method to protect our secrets, first we need to know where secrets are used and how they can be exposed. The following sections describe the three main areas that cover virtually all operational cases for Terraform on Azure:
+Before we can devise a method to protect our secrets, we need to know where secrets are used and how they can be exposed. The following sections describe the three main areas that cover virtually all operational cases for Terraform on Azure:
 
 * [Authentication to Azure](#authentication-to-azure) 
 * [Terraform State](#terraform-state)
@@ -31,11 +31,21 @@ The long wished-for solution is a way to eliminate the requirement for a bootstr
 
 Before continuing, read [Authenticating using managed identities for Azure resources](https://www.terraform.io/docs/providers/azurerm/auth/managed_service_identity.html), in the Terraform Azure Provider docs. The rest of this section builds on the information provided in the Azure Provider topic.
 
-Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the *Owner* role to give Terraform plenipotentiary access to the subscription because it simplifies RBAC configuration and troubleshooting. However, Owner has abilities that are not normally needed by Terraform. For example, a subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Anyone who can insert code into a Terraform configuration can potentially elevate their privilege or meddle with infrastructure they wouldn't otherwise be able to access, using the Terraform managed identity as a proxy. Follow the principal of least privilege when assigning roles. In most cases, it is enough to grant *Contributor* and *User Access Manager* roles to the Terraform managed identity.
+Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the *Owner* role to give Terraform plenipotentiary access to the subscription because it simplifies RBAC configuration and troubleshooting. However, Owner has abilities that are not normally needed by Terraform. For example, a subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Anyone who can insert code into a Terraform configuration can potentially elevate their privilege or meddle with infrastructure they wouldn't otherwise be able to access, using the Terraform managed identity as a proxy. Follow the principal of least privilege when assigning roles. In most cases, it is enough to grant *Contributor* and *User Access Manager* roles to the Terraform managed identity. 
 
-You have to configure a role, and sometimes an access policy, on every Azure service Terraform needs to access to plan or apply a configuration. RBAC in conjunction with access policies can provide fine-grained control over what Terraform can and cannot do. 
+You have to configure a role, and sometimes an access policy, on every Azure service Terraform needs to access to plan or apply a configuration. 
 
-The following code snippet shows how to manage 
+
+
+
+### Working with RBAC in a configuration 
+
+Assume you have a configuration that creates a virtual machine with managed identity enabled. When Terraform creates the VM, Azure AD automatically creates the managed identity service principal, but Azure AD does not assign any roles to the identity. Your configuration needs to assign roles so that the VM can access Azure resources. 
+
+The following code snippet shows how to manage RBAC roles and access policies in a Terraform configuration. Azure Key Vault requires a two-step configuration First, assign a role to allow the identity to connect to Key Vault, then assign an access policy to define exactly what objects and actions allowed. The Storage Blob container role allows the VM identity to access a Terraform remote backend for state.
+
+Notice the use of `azurerm_virtual_machine.vm.identity[0]` to return the *principal ID* for the virtual machine that was just created. 
+
 ```hcl
 /*
 *   Configure RBAC roles for the virtual machine service principal
@@ -63,7 +73,8 @@ resource "azurerm_role_assignment" "bcrole" {
     role_definition_id = "${var.contributor_role_id}"
     principal_id = "${lookup(azurerm_virtual_machine.vm.identity[0], "principal_id")}"
 }
-``
+```
+ 
 
 ## Terraform State
 
@@ -99,9 +110,12 @@ This article includes a companion Terraform script. The script demonstrates how 
 * Use *null_resource* to wrap a provisioner so that you can run the provisioner without creating or destroying infrastructure.
 * Enforce resource dependencies with *depends_on=[]*.
 
+
 1. Download the configuration from **! link to repo**
-2. Change the values in `variables.tf` as needed 
-3. Apply the configuration, fix issues, reapply, fix, repeat until it works. Don't forget that when a terraform configuration is aborted due to errors, Azure infrastructure that was created before the errors is left in an unknown state. Because TF is not idempotent, you need to run `terraform destroy` after every failed sortie so that you have a clean start on the next iteration. 
+2. Change the values in `variables.tf` as needed.
+3. Initialize the project with `terraform init`, and then run `terraform apply`. If the configuration runs without any major errors on the first try, lucky you. More likely, some troubleshooting will be needed to adapt the configuration to your particular Azure environment.
+
+    When a terraform configuration is terminated because of an error, Azure infrastructure that was created before the fatal error is left in an unknown state that may be inconsistent with Terraform state. In this situation, Terraform is *not* idempotent and applying the configuration again may produce unexpected results. You need to run `terraform destroy` after every failed sortie so that you have a clean start for the next iteration. 
 
 **Challenge exercise**: If you are experimentally minded, troubleshooting the sample configuration is a good opportunity to try out the [terraform taint](https://www.terraform.io/docs/commands/taint.html) command in a situation where you can do no harm. Using `terraform taint`, you can selectively taint resources to roll the configuration back to a known good point, which will depend on how far the configuration got before terminating. 
 
