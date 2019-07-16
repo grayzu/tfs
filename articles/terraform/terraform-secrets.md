@@ -11,7 +11,7 @@ ms.date: 07/08/2019
 
 # How to manage secrets in Terraform on Azure
 
-A *secret* is any information you don't want to compromise, such as security credentials, connection strings, network configuration details, and much more. It's impossible to work with Terraform on Azure without using secrets. Often, a Terraform configuration creates new secrets. Protecting secrets while still making them available to authorized users for automation and collaboration is a real challenge. This article offers guidance about how to keep a secret with Terraform and the [Terraform Azure Provider](https://www.terraform.io/docs/providers/azurerm/).
+A *secret* is any information you don't want to compromise, such as security credentials, connection strings, network configuration details, and much more. It's impossible to work with Terraform on Azure without using secrets. Protecting secrets while still making them available to authorized users for automation and collaboration is a challenge. This article offers guidance about how to keep a secret with Terraform and the [Terraform Azure Provider](https://www.terraform.io/docs/providers/azurerm/).
 
 Before we can devise a method to protect our secrets, we need to know where secrets are used and how they can be exposed. The following sections describe the three main areas that cover virtually all operational cases for Terraform on Azure:
 
@@ -29,13 +29,11 @@ The long wished-for solution is a way to eliminate the requirement for a bootstr
 
 ### Using managed identity
 
-Before continuing, read [Authenticating using managed identities for Azure resources](https://www.terraform.io/docs/providers/azurerm/auth/managed_service_identity.html), in the Terraform Azure Provider docs. The rest of this section builds on the information provided in the Azure Provider topic.
+Before continuing, read [Authenticating using managed identities for Azure resources](https://www.terraform.io/docs/providers/azurerm/auth/managed_service_identity.html). The rest of this section builds on the information provided in the Azure Provider topic.
 
 Don't assign the managed identity security principal more permission than it needs. It's tempting to assign the *Owner* role to give Terraform plenipotentiary access to the subscription because it simplifies RBAC configuration and troubleshooting. However, Owner has abilities that are not normally needed by Terraform. For example, a subscription Owner can elevate other accounts to Owner, and owners can modify and destroy infrastructure they didn't create. Anyone who can insert code into a Terraform configuration can potentially elevate their privilege or meddle with infrastructure they wouldn't otherwise be able to access, using the Terraform managed identity as a proxy. Follow the principal of least privilege when assigning roles. In most cases, it is enough to grant *Contributor* and *User Access Manager* roles to the Terraform managed identity. 
 
 You have to configure a role, and sometimes an access policy, on every Azure service Terraform needs to access to plan or apply a configuration. 
-
-
 
 
 ### Working with RBAC in a configuration 
@@ -88,6 +86,23 @@ The sections below related to state focus on two areas: remote state, and keepin
 * When tf init is run, the backend is initialized. 
 * You can override the default environment setting and control backend initialization as described in [terraform init](https://www.terraform.io/docs/commands/init.html#backend-initialization). 
 * Show examples of backend configurations
+
+### Terraform plan
+
+A Terraform [execution plan](https://www.terraform.io/docs/commands/plan.html) is closely related to state. Plans, like state, contain secrets such as connection strings in plain text. The same considerations that apply to state in long-running pipelines also apply to plans, if plans are a part of your collaborative workflow. For example, a workflow might look something like this:
+
+1. A developer creates a pull request for a modified Terraform configuration.
+2. A pipeline is triggered, and a stage in the pipeline runs `terraform plan -out=[plan_path]` to generate a plan based on the proposed configuration.
+3. Another stage in the pipeline sends a notification to a reviewer, and `terraform show [plan_path]` is run to display the plan. 
+4. If the reviewer approves the plan, another stage in the pipeline runs `terraform apply [plan_path]`.
+
+Unless the entire pipeline executes on one host, it will be necessary to store the plan in a remote location (`[plan_path]`) where multiple hosts can access the plan. In a multi-tenant environment plans must be stored where they are accessible only to users who are authorized to work with a given plan. In this situation you must secure the plan just as you do with state.
+
+Terraform and the **azurerm** provider allow you to save state remotely on Azure Storage, however, there is no similar provision for saving a plan remotely in Terraform on Azure. For the time being at least, it is necessary for you to implement your own method of saving plans remotely.
+
+One approach uses [blobfuse](https://docs.microsoft.com/azure/storage/blobs/storage-how-to-mount-container-linux) to mount a [Azure Blob](https://docs.microsoft.com/azure/storage/blobs/storage-blobs-overview) container on Linux. After the Blob container is mounted, you can save and retrieve plans from Azure Storage, much as you do with state. 
+
+<!-- add a procedure -- use blobfuse to mount a storage container on the linux filesystem, then specify that drive as the location for remote plan storage -->
 
 
 ## Host environments
